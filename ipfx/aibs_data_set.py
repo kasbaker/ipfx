@@ -47,6 +47,36 @@ class AibsDataSet(EphysDataSet):
 
             sweep_record['stimulus_units'] = self.get_stimulus_units(sweep_num)
 
+            # MCC settings from lab notebook
+            # V-Clamp holding level
+            sweep_record["v_clamp_holding_level"] = self.notebook.get_value(
+                "V-Clamp Holding Level", sweep_num, None)
+
+            # RsComp Bandwidth
+            sweep_record["rs_comp_bandwidth"] = self.notebook.get_value(
+                "RsComp Bandwidth", sweep_num, None)
+
+            # RsComp Correction
+            sweep_record["rs_comp_correction"] = self.notebook.get_value(
+                "RsComp Correction", sweep_num, None)
+
+            # RsComp Prediction
+            sweep_record["rs_comp_prediction"] = self.notebook.get_value(
+                "RsComp Prediction", sweep_num, None)
+
+            # Whole Cell Comp Cap
+            sweep_record["wc_comp_cap"] = self.notebook.get_value(
+                "Whole Cell Comp Cap", sweep_num, None)
+
+            # Whole Cell Comp Resist
+            sweep_record["wc_comp_resist"] = self.notebook.get_value(
+                "Whole Cell Comp Resist", sweep_num, None)
+
+            # This value doesn't exist in the list in lab_notebook_reader so it breaks things
+            # # I Clamp Cap Neut
+            # sweep_record["cap_neut"] = self.notebook.get_value(
+            #     "Neut Cap Value", sweep_num, None)
+
             # bridge balance
             sweep_record["bridge_balance_mohm"] = self.notebook.get_value(
                 "Bridge Bal Value", sweep_num, None)
