@@ -4,6 +4,8 @@ import datetime as dt
 import cProfile
 import pstats
 import json
+import functools
+import gc
 
 from ipfx.dataset.create import create_ephys_data_set, create_ephys_data_set_lru
 from ipfx.sweep_props import drop_tagged_sweeps
@@ -54,32 +56,14 @@ def main(nwb_file, lru = False):
     )
 
 
-def lru_main(nwb_file):
-    data_set = create_ephys_data_set(nwb_file=nwb_file, ontology=ONTOLOGY)
+def clear_all_lru_cache():
+    # All objects collected
+    objects = [i for i in gc.get_objects()
+               if isinstance(i, functools._lru_cache_wrapper)]
 
-    # cell QC worker
-    cell_features, cell_tags = cell_qc_features(data_set)
-    cell_features = deepcopy(cell_features)
-
-    # sweep QC worker
-    sweep_features = sweep_qc_features(data_set)
-    sweep_features = deepcopy(sweep_features)
-    drop_tagged_sweeps(sweep_features)
-
-    # experiment QC worker
-    cell_state, sweep_states = qc_experiment(
-        ontology=ONTOLOGY,
-        cell_features=cell_features,
-        sweep_features=sweep_features,
-        qc_criteria=QC_CRITERIA
-    )
-
-    qc_summary(
-        sweep_features=sweep_features,
-        sweep_states=sweep_states,
-        cell_features=cell_features,
-        cell_state=cell_state
-    )
+    # All objects cleared
+    for object in objects:
+        object.cache_clear()
 
 
 if __name__ == '__main__':
@@ -90,15 +74,19 @@ if __name__ == '__main__':
     now = dt.datetime.now().strftime('%H.%M.%S')
     profile_dir = base_dir.joinpath(f'profiles/{today}/{now}')
     profile_dir.mkdir(parents=True)
-    for file in files[0:2]:
+    for file in files:
         nwb_file = str(file)
 
-        profile_file = str(profile_dir.joinpath(f'lru_cache_get_series_maxsize=None{str(file.stem)}.prof'))
+        profile_file = str(profile_dir.joinpath(f'lru_cache_get_series_no_max-{str(file.stem)}.prof'))
         cProfile.run('main(nwb_file, lru=True)', filename=profile_file)
         p = pstats.Stats(profile_file)
         p.sort_stats('cumtime').print_stats(20)
+
+        clear_all_lru_cache()
 
         profile_file = str(profile_dir.joinpath(f'no_cache_{str(file.stem)}.prof'))
         cProfile.run('main(nwb_file, lru=False)', filename=profile_file)
         p = pstats.Stats(profile_file)
         p.sort_stats('cumtime').print_stats(20)
+
+        clear_all_lru_cache()

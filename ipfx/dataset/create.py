@@ -9,7 +9,7 @@ import allensdk.core.json_utilities as ju
 
 from ipfx.dataset.ephys_data_set import EphysDataSet
 from ipfx.stimulus import StimulusOntology
-from ipfx.dataset.hbg_nwb_data import HBGNWBData
+from ipfx.dataset.hbg_nwb_data import HBGNWBData, HBGNWBDataLRU
 from ipfx.dataset.mies_nwb_data import MIESNWBData, MIESNWBDataLRU
 from ipfx import py2to3
 from ipfx.dataset.labnotebook import LabNotebookReaderIgorNwb
@@ -158,7 +158,7 @@ def create_ephys_data_set_lru(
             labnotebook = LabNotebookReaderIgorNwb(nwb_file)
             nwb_data = MIESNWBDataLRU(nwb_file, labnotebook, ontology)
         else:
-            nwb_data = HBGNWBData(nwb_file, ontology)
+            nwb_data = HBGNWBDataLRU(nwb_file, ontology)
 
     else:
         raise ValueError(
