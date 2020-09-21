@@ -1,0 +1,104 @@
+from pathlib import Path
+from copy import deepcopy
+import datetime as dt
+import cProfile
+import pstats
+import json
+
+from ipfx.dataset.create import create_ephys_data_set, create_ephys_data_set_lru
+from ipfx.sweep_props import drop_tagged_sweeps
+from ipfx.bin.run_qc import qc_summary
+from ipfx.qc_feature_extractor import cell_qc_features, sweep_qc_features
+from ipfx.qc_feature_evaluator import qc_experiment, DEFAULT_QC_CRITERIA_FILE
+from ipfx.stimulus import StimulusOntology
+
+
+with open(DEFAULT_QC_CRITERIA_FILE, "r") as path:
+    QC_CRITERIA = json.load(path)
+
+with open(StimulusOntology.DEFAULT_STIMULUS_ONTOLOGY_FILE, "r") \
+        as path:
+    ONTOLOGY = StimulusOntology(json.load(path))
+
+
+def main(nwb_file, lru = False):
+    if lru:
+        print("testing LRU cache")
+        data_set = create_ephys_data_set_lru(nwb_file=nwb_file, ontology=ONTOLOGY)
+    else:
+        print("testing no cache")
+        data_set = create_ephys_data_set(nwb_file=nwb_file, ontology=ONTOLOGY)
+
+    # cell QC worker
+    cell_features, cell_tags = cell_qc_features(data_set)
+    cell_features = deepcopy(cell_features)
+
+    # sweep QC worker
+    sweep_features = sweep_qc_features(data_set)
+    sweep_features = deepcopy(sweep_features)
+    drop_tagged_sweeps(sweep_features)
+
+    # experiment QC worker
+    cell_state, sweep_states = qc_experiment(
+        ontology=ONTOLOGY,
+        cell_features=cell_features,
+        sweep_features=sweep_features,
+        qc_criteria=QC_CRITERIA
+    )
+
+    qc_summary(
+        sweep_features=sweep_features,
+        sweep_states=sweep_states,
+        cell_features=cell_features,
+        cell_state=cell_state
+    )
+
+
+def lru_main(nwb_file):
+    data_set = create_ephys_data_set(nwb_file=nwb_file, ontology=ONTOLOGY)
+
+    # cell QC worker
+    cell_features, cell_tags = cell_qc_features(data_set)
+    cell_features = deepcopy(cell_features)
+
+    # sweep QC worker
+    sweep_features = sweep_qc_features(data_set)
+    sweep_features = deepcopy(sweep_features)
+    drop_tagged_sweeps(sweep_features)
+
+    # experiment QC worker
+    cell_state, sweep_states = qc_experiment(
+        ontology=ONTOLOGY,
+        cell_features=cell_features,
+        sweep_features=sweep_features,
+        qc_criteria=QC_CRITERIA
+    )
+
+    qc_summary(
+        sweep_features=sweep_features,
+        sweep_states=sweep_states,
+        cell_features=cell_features,
+        cell_state=cell_state
+    )
+
+
+if __name__ == '__main__':
+    files = list(Path("data/nwb").glob("*.nwb"))
+    base_dir = Path(__file__).parent
+    today = dt.datetime.now().strftime('%y%m%d')
+
+    now = dt.datetime.now().strftime('%H.%M.%S')
+    profile_dir = base_dir.joinpath(f'profiles/{today}/{now}')
+    profile_dir.mkdir(parents=True)
+    for file in files[0:2]:
+        nwb_file = str(file)
+
+        profile_file = str(profile_dir.joinpath(f'lru_cache_get_series_maxsize=None{str(file.stem)}.prof'))
+        cProfile.run('main(nwb_file, lru=True)', filename=profile_file)
+        p = pstats.Stats(profile_file)
+        p.sort_stats('cumtime').print_stats(20)
+
+        profile_file = str(profile_dir.joinpath(f'no_cache_{str(file.stem)}.prof'))
+        cProfile.run('main(nwb_file, lru=False)', filename=profile_file)
+        p = pstats.Stats(profile_file)
+        p.sort_stats('cumtime').print_stats(20)
