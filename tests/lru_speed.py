@@ -77,14 +77,14 @@ if __name__ == '__main__':
     for file in files:
         nwb_file = str(file)
 
-        profile_file = str(profile_dir.joinpath(f'lru_cache_get_series_no_max-{str(file.stem)}.prof'))
+        profile_file = str(profile_dir.joinpath(f'{str(file.stem)[0:10]}-cache-series.prof'))
         cProfile.run('main(nwb_file, lru=True)', filename=profile_file)
         p = pstats.Stats(profile_file)
         p.sort_stats('cumtime').print_stats(20)
 
         clear_all_lru_cache()
 
-        profile_file = str(profile_dir.joinpath(f'no_cache_{str(file.stem)}.prof'))
+        profile_file = str(profile_dir.joinpath(f'{str(file.stem)[0:10]}-cache-series-sweep_data.prof'))
         cProfile.run('main(nwb_file, lru=False)', filename=profile_file)
         p = pstats.Stats(profile_file)
         p.sort_stats('cumtime').print_stats(20)

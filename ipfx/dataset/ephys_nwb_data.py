@@ -108,6 +108,7 @@ class EphysNWBData(EphysDataInterface):
             warnings.simplefilter("ignore")
             self.nwb = reader.read()
 
+    @lru_cache(maxsize=None)
     def _get_series(self, sweep_number: int,
                     series_class: Tuple[PatchClampSeries]):
         """
@@ -387,7 +388,6 @@ class EphysNWBDataLRU(EphysDataInterface):
                              "{[s.name for s in matching_series]} "
                              "for sweep number {sweep_number}")
 
-    # @lru_cache(maxsize=None)
     def get_sweep_data(self, sweep_number):
         """
         Parameters
@@ -398,46 +398,20 @@ class EphysNWBDataLRU(EphysDataInterface):
         if not isinstance(sweep_number, (int, np.uint64, np.int64)):
             raise ValueError("sweep_number must be an integer but it is {}".format(type(sweep_number)))
 
-        series = self.nwb.sweep_table.get_series(sweep_number)
-
-        if series is None:
-            raise ValueError("No TimeSeries found for sweep number {}.".format(sweep_number))
-
         # we need one "*ClampStimulusSeries" and one "*ClampSeries"
 
-        response = None
-        stimulus = None
-        for s in series:
+        # grab stimulus series and extract appropriate data from it
+        stimulus_series = self._get_series(sweep_number, self.STIMULUS)
+        stimulus = stimulus_series.data[:] * float(stimulus_series.conversion)
+        stimulus_unit = self.get_long_unit_name(stimulus_series.unit)
+        self.validate_SI_unit(stimulus_unit)
+        stimulus_rate = float(stimulus_series.rate)
 
-            if isinstance(s, (VoltageClampSeries, CurrentClampSeries, IZeroClampSeries)):
-                if response is not None:
-                    raise ValueError("Found multiple response TimeSeries in NWB file for sweep number {}.".format(sweep_number))
-
-                response = s.data[:] * float(s.conversion)
-            elif isinstance(s, (VoltageClampStimulusSeries, CurrentClampStimulusSeries)):
-                if stimulus is not None:
-                    raise ValueError("Found multiple stimulus TimeSeries in NWB file for sweep number {}.".format(sweep_number))
-
-                    response = s.data[:] * float(s.conversion)
-                    response_unit = self.get_long_unit_name(s.unit)
-                    self.validate_SI_unit(response_unit)
-
-                elif isinstance(s, (VoltageClampStimulusSeries, CurrentClampStimulusSeries)):
-                    if stimulus is not None:
-                        raise ValueError("Found multiple stimulus TimeSeries in NWB file for sweep number {}.".format(sweep_number))
-
-                    stimulus = s.data[:] * float(s.conversion)
-                    stimulus_unit = self.get_long_unit_name(s.unit)
-                    self.validate_SI_unit(stimulus_unit)
-
-                    stimulus_rate = float(s.rate)
-                else:
-                    raise ValueError("Unexpected TimeSeries {}.".format(type(s)))
-
-        if stimulus is None:
-            raise ValueError("Could not find one stimulus TimeSeries for sweep number {}.".format(sweep_number))
-        elif response is None:
-            raise ValueError("Could not find one response TimeSeries for sweep number {}.".format(sweep_number))
+        # grab response series and extract appropriate data from it
+        response_series = self._get_series(sweep_number, self.RESPONSE)
+        response = response_series.data[:] * float(response_series.conversion)
+        response_unit = self.get_long_unit_name(response_series.unit)
+        self.validate_SI_unit(response_unit)
 
         if stimulus_unit == "Volts":
             stimulus = stimulus * 1.0e3
