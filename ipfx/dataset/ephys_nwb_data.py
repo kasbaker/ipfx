@@ -1,9 +1,8 @@
-from typing import Dict, Any, Tuple, Optional, Sequence, Callable
+from typing import Dict, Tuple, Sequence, Type, Union
 import warnings
 from functools import lru_cache
 
 import numpy as np
-import pandas as pd
 from dateutil import parser as dateparser
 
 from io import BytesIO
@@ -110,86 +109,118 @@ class EphysNWBData(EphysDataInterface):
 
     @lru_cache(maxsize=None)
     def _get_series(self, sweep_number: int,
-                    series_class: Tuple[PatchClampSeries]):
-        """
-        Get Time Series of a specified class
+                    series_class: Tuple[Type[PatchClampSeries]]):
+        """Returns PatchClampSeries of the requested sweep number and type.
+
+        The results of this function are cached in order to speed up data access
+        time when the same TimeSeries is requested in subsequent function calls.
+
         Parameters
         ----------
-        sweep_number: int sweep number
-        series_class: pynwb.PatchClampSeries
+        sweep_number : int
+            Integer specifying the sweep number requested.
+
+        series_class : Tuple[Type[pynwb.PatchClampSeries]]
+            The type of series requested (i.e. stimulus or response series).
 
         Returns
         -------
-        series: pynwb.PatchClampSeries
+        series : pynwb.PatchClampSeries
+            The stimulus or response PatchClampSeries requested.
+
+        Raises
+        ------
+        TypeError
+            If sweep_number is not an integer or series_class is not a stimulus
+            or response PatchClampSeries
+        ValueError
+            If there are no TimeSeries found for this sweep number or if there
+            is not exactly one matching PatchClampSeries of the requested type.
+
         """
+        if not isinstance(
+            sweep_number, (int, np.uint64, np.int64, np.uint32, np.int32)
+        ):
+            raise TypeError(
+                f"Sweep_number must be an integer, but it is {type(sweep_number)}"
+            )
+
         series = self.nwb.sweep_table.get_series(sweep_number)
 
         if series is None:
-            raise ValueError("No TimeSeries found for sweep number {}.".format(sweep_number))
+            raise ValueError(
+                f"No TimeSeries found for sweep number {sweep_number}."
+            )
 
         matching_series = []
 
+        # Look for instances of stimulus or response PatchCLampSeries
         for s in series:
-            if isinstance(s,series_class):
+            if isinstance(s, series_class):
                 matching_series.append(s)
 
-        if len(matching_series) == 1:
+        # check how many series we have to make sure we only got 1 TimeSeries
+        num_series = len(matching_series)
+        if num_series == 1:
             return matching_series[0]
         else:
-            raise ValueError("Found multiple stimulus series "
-                             "{[s.name for s in matching_series]} "
-                             "for sweep number {sweep_number}")
+            # check series type so we can display an appropriate error
 
-    def get_sweep_data(self, sweep_number):
-        """
+            if isinstance(series_class, self.STIMULUS):
+                series_name = "stimulus"
+            elif isinstance(series_class, self.RESPONSE):
+                series_name = "response"
+            else:
+                raise TypeError(
+                    f"{type(series_class)} is not a stimulus or response PatchClampSeries"
+                )
+
+            if num_series == 0:
+                raise ValueError(
+                    f"Could not find any {series_name} PatchClampSeries "
+                    f"for sweep number {sweep_number}."
+                )
+            else:
+                # check how many matching series we have
+                raise ValueError(
+                    f"Found {num_series} {series_name} PatchClampSeries "
+                    f"{[s.name for s in matching_series]} "
+                    f"for sweep number {sweep_number}."
+                )
+
+    def get_sweep_data(
+        self, sweep_number: int
+    ) -> Dict[str, Union[np.ndarray, str, float]]:
+        """Extracts numpy arrays, stimulus unit, and sampling rate from sweep.
+
+        Grabs stimulus and response PatchClampSeries and extracts numpy arrays
+        for the stimulus and response time series data as well as the stimulus
+        unit and sampling rate
+
         Parameters
         ----------
         sweep_number: int
+            Integer specifying the sweep to extract data from
+
+        Returns
+        -------
+        sweep_data : Dict[str, Union[np.ndarray, str, float]]
+            Dictionary of sweep data, which includes stimulus and response
+            numpy arrays as well as stimulus units and sampling rate.
+
         """
+        # grab stimulus series and extract appropriate data from it
+        stimulus_series = self._get_series(sweep_number, self.STIMULUS)
+        stimulus = stimulus_series.data[:] * float(stimulus_series.conversion)
+        stimulus_unit = self.get_long_unit_name(stimulus_series.unit)
+        self.validate_SI_unit(stimulus_unit)
+        stimulus_rate = float(stimulus_series.rate)
 
-        if not isinstance(sweep_number, (int, np.uint64, np.int64)):
-            raise ValueError("sweep_number must be an integer but it is {}".format(type(sweep_number)))
-
-        series = self.nwb.sweep_table.get_series(sweep_number)
-
-        if series is None:
-            raise ValueError("No TimeSeries found for sweep number {}.".format(sweep_number))
-
-        # we need one "*ClampStimulusSeries" and one "*ClampSeries"
-
-        response = None
-        stimulus = None
-        for s in series:
-
-            if isinstance(s, (VoltageClampSeries, CurrentClampSeries, IZeroClampSeries)):
-                if response is not None:
-                    raise ValueError("Found multiple response TimeSeries in NWB file for sweep number {}.".format(sweep_number))
-
-                response = s.data[:] * float(s.conversion)
-            elif isinstance(s, (VoltageClampStimulusSeries, CurrentClampStimulusSeries)):
-                if stimulus is not None:
-                    raise ValueError("Found multiple stimulus TimeSeries in NWB file for sweep number {}.".format(sweep_number))
-
-                    response = s.data[:] * float(s.conversion)
-                    response_unit = self.get_long_unit_name(s.unit)
-                    self.validate_SI_unit(response_unit)
-
-                elif isinstance(s, (VoltageClampStimulusSeries, CurrentClampStimulusSeries)):
-                    if stimulus is not None:
-                        raise ValueError("Found multiple stimulus TimeSeries in NWB file for sweep number {}.".format(sweep_number))
-
-                    stimulus = s.data[:] * float(s.conversion)
-                    stimulus_unit = self.get_long_unit_name(s.unit)
-                    self.validate_SI_unit(stimulus_unit)
-
-                    stimulus_rate = float(s.rate)
-                else:
-                    raise ValueError("Unexpected TimeSeries {}.".format(type(s)))
-
-        if stimulus is None:
-            raise ValueError("Could not find one stimulus TimeSeries for sweep number {}.".format(sweep_number))
-        elif response is None:
-            raise ValueError("Could not find one response TimeSeries for sweep number {}.".format(sweep_number))
+        # grab response series and extract appropriate data from it
+        response_series = self._get_series(sweep_number, self.RESPONSE)
+        response = response_series.data[:] * float(response_series.conversion)
+        response_unit = self.get_long_unit_name(response_series.unit)
+        self.validate_SI_unit(response_unit)
 
         if stimulus_unit == "Volts":
             stimulus = stimulus * 1.0e3
@@ -326,6 +357,7 @@ class EphysNWBDataLRU(EphysDataInterface):
         self.acquisition_path = "acquisition"
         self.stimulus_path = "stimulus/presentation"
         self.nwb_major_version = 2
+        self._series_table = {}
 
     def load_nwb(self, nwb_file: None, load_into_memory: bool = True):
         """
@@ -358,48 +390,106 @@ class EphysNWBDataLRU(EphysDataInterface):
 
     @lru_cache(maxsize=None)
     def _get_series(self, sweep_number: int,
-                    series_class: Tuple[PatchClampSeries]):
-        """
-        Get Time Series of a specified class
+                    series_class: Tuple[Type[PatchClampSeries]]):
+        """Returns PatchClampSeries of the requested sweep number and type.
+
+        The results of this function are cached in order to speed up data access
+        time when the same TimeSeries is requested in subsequent function calls.
+
         Parameters
         ----------
-        sweep_number: int sweep number
-        series_class: pynwb.PatchClampSeries
+        sweep_number : int
+            Integer specifying the sweep number requested.
+
+        series_class : Tuple[Type[pynwb.PatchClampSeries]]
+            The type of series requested (i.e. stimulus or response series).
 
         Returns
         -------
-        series: pynwb.PatchClampSeries
+        series : pynwb.PatchClampSeries
+            The stimulus or response PatchClampSeries requested.
+
+        Raises
+        ------
+        TypeError
+            If sweep_number is not an integer or series_class is not a stimulus
+            or response PatchClampSeries
+        ValueError
+            If there are no TimeSeries found for this sweep number or if there
+            is not exactly one matching PatchClampSeries of the requested type.
+
         """
+        if not isinstance(
+            sweep_number, (int, np.uint64, np.int64, np.uint32, np.int32)
+        ):
+            raise TypeError(
+                f"Sweep_number must be an integer, but it is {type(sweep_number)}"
+            )
+
         series = self.nwb.sweep_table.get_series(sweep_number)
 
         if series is None:
-            raise ValueError("No TimeSeries found for sweep number {}.".format(sweep_number))
+            raise ValueError(
+                f"No TimeSeries found for sweep number {sweep_number}."
+            )
 
         matching_series = []
 
+        # Look for instances of stimulus or response PatchCLampSeries
         for s in series:
-            if isinstance(s,series_class):
+            if isinstance(s, series_class):
                 matching_series.append(s)
 
-        if len(matching_series) == 1:
+        # check how many series we have to make sure we only got 1 TimeSeries
+        num_series = len(matching_series)
+        if num_series == 1:
             return matching_series[0]
         else:
-            raise ValueError("Found multiple stimulus series "
-                             "{[s.name for s in matching_series]} "
-                             "for sweep number {sweep_number}")
+            # check series type so we can display an appropriate error
 
-    def get_sweep_data(self, sweep_number):
-        """
+            if isinstance(series_class, self.STIMULUS):
+                series_name = "stimulus"
+            elif isinstance(series_class, self.RESPONSE):
+                series_name = "response"
+            else:
+                raise TypeError(
+                    f"{type(series_class)} is not a stimulus or response PatchClampSeries"
+                )
+
+            if num_series == 0:
+                raise ValueError(
+                    f"Could not find any {series_name} PatchClampSeries "
+                    f"for sweep number {sweep_number}."
+                )
+            else:
+                # check how many matching series we have
+                raise ValueError(
+                    f"Found {num_series} {series_name} PatchClampSeries "
+                    f"{[s.name for s in matching_series]} "
+                    f"for sweep number {sweep_number}."
+                )
+
+    def get_sweep_data(
+        self, sweep_number: int
+    ) -> Dict[str, Union[np.ndarray, str, float]]:
+        """Extracts numpy arrays, stimulus unit, and sampling rate from sweep.
+
+        Grabs stimulus and response PatchClampSeries and extracts numpy arrays
+        for the stimulus and response time series data as well as the stimulus
+        unit and sampling rate
+
         Parameters
         ----------
         sweep_number: int
+            Integer specifying the sweep to extract data from
+
+        Returns
+        -------
+        sweep_data : Dict[str, Union[np.ndarray, str, float]]
+            Dictionary of sweep data, which includes stimulus and response
+            numpy arrays as well as stimulus units and sampling rate.
+
         """
-
-        if not isinstance(sweep_number, (int, np.uint64, np.int64)):
-            raise ValueError("sweep_number must be an integer but it is {}".format(type(sweep_number)))
-
-        # we need one "*ClampStimulusSeries" and one "*ClampSeries"
-
         # grab stimulus series and extract appropriate data from it
         stimulus_series = self._get_series(sweep_number, self.STIMULUS)
         stimulus = stimulus_series.data[:] * float(stimulus_series.conversion)
@@ -488,12 +578,11 @@ class EphysNWBDataLRU(EphysDataInterface):
 
         return datetime_object
 
-
     def get_sweep_metadata(self, sweep_number: int):
         raise NotImplementedError
 
     def get_stimulus_unit(self,sweep_number):
-        stimulus_series = self._get_series(sweep_number,self.STIMULUS)
+        stimulus_series = self._get_series(sweep_number, self.RESPONSE)
         return type(self).get_long_unit_name(stimulus_series.unit)
 
     def get_clamp_mode(self,sweep_number):

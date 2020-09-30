@@ -33,27 +33,27 @@ def main(nwb_file, lru = False):
 
     # cell QC worker
     cell_features, cell_tags = cell_qc_features(data_set)
-    cell_features = deepcopy(cell_features)
+    # cell_features = deepcopy(cell_features)
 
-    # sweep QC worker
-    sweep_features = sweep_qc_features(data_set)
-    sweep_features = deepcopy(sweep_features)
-    drop_tagged_sweeps(sweep_features)
-
-    # experiment QC worker
-    cell_state, sweep_states = qc_experiment(
-        ontology=ONTOLOGY,
-        cell_features=cell_features,
-        sweep_features=sweep_features,
-        qc_criteria=QC_CRITERIA
-    )
-
-    qc_summary(
-        sweep_features=sweep_features,
-        sweep_states=sweep_states,
-        cell_features=cell_features,
-        cell_state=cell_state
-    )
+    # # sweep QC worker
+    # sweep_features = sweep_qc_features(data_set)
+    # sweep_features = deepcopy(sweep_features)
+    # drop_tagged_sweeps(sweep_features)
+    #
+    # # experiment QC worker
+    # cell_state, sweep_states = qc_experiment(
+    #     ontology=ONTOLOGY,
+    #     cell_features=cell_features,
+    #     sweep_features=sweep_features,
+    #     qc_criteria=QC_CRITERIA
+    # )
+    #
+    # qc_summary(
+    #     sweep_features=sweep_features,
+    #     sweep_states=sweep_states,
+    #     cell_features=cell_features,
+    #     cell_state=cell_state
+    # )
 
 
 def clear_all_lru_cache():
@@ -77,14 +77,14 @@ if __name__ == '__main__':
     for file in files:
         nwb_file = str(file)
 
-        profile_file = str(profile_dir.joinpath(f'{str(file.stem)[0:10]}-cache-series.prof'))
+        profile_file = str(profile_dir.joinpath(f'{str(file.stem)[0:10]}-cache1-cell.prof'))
         cProfile.run('main(nwb_file, lru=True)', filename=profile_file)
         p = pstats.Stats(profile_file)
         p.sort_stats('cumtime').print_stats(20)
 
         clear_all_lru_cache()
 
-        profile_file = str(profile_dir.joinpath(f'{str(file.stem)[0:10]}-cache-series-sweep_data.prof'))
+        profile_file = str(profile_dir.joinpath(f'{str(file.stem)[0:10]}-cache2-cell.prof'))
         cProfile.run('main(nwb_file, lru=False)', filename=profile_file)
         p = pstats.Stats(profile_file)
         p.sort_stats('cumtime').print_stats(20)
