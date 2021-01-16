@@ -32,7 +32,8 @@ def mies_nwb_data(tmp_nwb_path):
         def get_value(self, key, sweep_num, default):
             return {
                 ("Scale Factor", 4): 200.0,
-                ("Set Sweep Count", 4): "1"
+                ("Set Sweep Count", 4): "1",
+                ("V-Clamp Holding Level", 4): -70.0
             }.get((key, sweep_num), default)
 
     fake_notebook = Notebook()
@@ -53,6 +54,7 @@ def test_get_sweep_metadata(mies_nwb_data):
         'stimulus_units': 'Amps',
         'bridge_balance_mohm': 500.0,
         'leak_pa': 100.0,
+        'holding_mv': -70.0,
         'stimulus_scale_factor': 200.0,
         'stimulus_code': 'STIMULUS_CODE',
         'stimulus_code_ext': 'STIMULUS_CODE[1]',

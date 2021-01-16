@@ -42,6 +42,9 @@ class MIESNWBData(EphysNWBData):
             "stimulus_units": self.get_stimulus_unit(sweep_number),
             "bridge_balance_mohm": get_finite_or_none(attrs, "bridge_balance"),
             "leak_pa": get_finite_or_none(attrs, "bias_current"),
+            "holding_mv": self.notebook.get_value(
+                "V-Clamp Holding Level", sweep_number, None
+            ),
             "stimulus_scale_factor": self.notebook.get_value(
                 "Scale Factor", sweep_number, None
             ),
